@@ -100,7 +100,6 @@ async def get_weather(
     df["temperature_max"] = pd.to_numeric(
         df["temperature_max"], errors="coerce"
     )
-
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
     # Remove invalid records
