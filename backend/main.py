@@ -197,14 +197,17 @@ async def analyze(
         .groupby(group_ids[extreme_flags])
         .size()
     )
-
     heatwave_count = int(
         (heatwave_durations >= 3).sum()
     )
 
+    valid_heatwave_durations = heatwave_durations[
+        heatwave_durations >= 3
+    ]
+
     longest_heatwave = (
-        int(heatwave_durations.max())
-        if not heatwave_durations.empty
+        int(valid_heatwave_durations.max())
+        if not valid_heatwave_durations.empty
         else 0
     )
 
