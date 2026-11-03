@@ -103,41 +103,46 @@ async def get_weather(
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
-df = df.dropna(subset=["date", "temperature_max"])
+    # Remove invalid records
+    df = df.dropna(subset=["date", "temperature_max"])
 
-# Keep only records within the requested date range
-df = df[
-    (df["date"].dt.date >= start_date)
-    & (df["date"].dt.date <= end_date)
-]
+    # Keep only records within the requested date range
+    df = df[
+        (df["date"].dt.date >= start_date)
+        & (df["date"].dt.date <= end_date)
+    ]
 
-# Remove duplicate dates
-df = df.drop_duplicates(subset=["date"], keep="first")
+    # Remove duplicate dates
+    df = df.drop_duplicates(subset=["date"], keep="first")
 
-df = df.sort_values("date").reset_index(drop=True)
+    # Sort records chronologically
+    df = df.sort_values("date").reset_index(drop=True)
 
-if df.empty:
-    raise HTTPException(
-        status_code=502,
-        detail="No valid temperature data returned",
+    if df.empty:
+        raise HTTPException(
+            status_code=502,
+            detail="No valid temperature data returned",
+        )
+
+    # Calculate actual missing calendar dates
+    expected_days = (end_date - start_date).days + 1
+
+    expected_dates = pd.date_range(
+        start=start_date,
+        end=end_date,
+        freq="D",
     )
 
-# Calculate actual missing calendar dates
-expected_days = (end_date - start_date).days + 1
+    returned_dates = pd.DatetimeIndex(
+        df["date"].dt.normalize()
+    )
 
-expected_dates = pd.date_range(
-    start=start_date,
-    end=end_date,
-    freq="D",
-)
+    missing_days = len(
+        expected_dates.difference(returned_dates)
+    )
 
-returned_dates = pd.DatetimeIndex(df["date"].dt.normalize())
+    records_returned = len(df)
 
-missing_days = len(
-    expected_dates.difference(returned_dates)
-)
-
-records_returned = len(df)
     return {
         "location": {
             "latitude": latitude,
