@@ -1,4 +1,5 @@
-﻿from fastapi.middleware.cors import CORSMiddleware
+﻿
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
 import httpx
 import pandas as pd
@@ -7,9 +8,8 @@ from fastapi import FastAPI, HTTPException, Query
 app = FastAPI(
     title="Climate Hazard Analyzer API",
     description="API for climate hazard analysis",
-    version="1.0.0",
+    version="1.1.0",
 )
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,9 +25,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 def home():
-    return {"message": "Climate Hazard Analyzer API is running"}
+    return {
+        "message": "Climate Hazard Analyzer API is running",
+        "version": "1.1.0",
+    }
 
 
 @app.get("/health")
@@ -71,7 +75,7 @@ async def get_weather(
             response.raise_for_status()
             weather = response.json()
 
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(
             status_code=502,
             detail="Weather data provider request failed",
@@ -96,13 +100,20 @@ async def get_weather(
         df["temperature_max"], errors="coerce"
     )
 
-    df = df.dropna(subset=["temperature_max"])
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+
+    df = df.dropna(subset=["date", "temperature_max"])
+    df = df.sort_values("date").reset_index(drop=True)
 
     if df.empty:
         raise HTTPException(
             status_code=502,
             detail="No valid temperature data returned",
         )
+
+    expected_days = (end_date - start_date).days + 1
+    records_returned = len(df)
+    missing_days = max(expected_days - records_returned, 0)
 
     return {
         "location": {
@@ -112,10 +123,12 @@ async def get_weather(
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "unit": "°C",
-        "records_returned": len(df),
+        "records_returned": records_returned,
+        "expected_days": expected_days,
+        "missing_days": missing_days,
         "data": [
             {
-                "date": row.date,
+                "date": row.date.strftime("%Y-%m-%d"),
                 "temperature_max": round(
                     float(row.temperature_max), 2
                 ),
@@ -147,20 +160,59 @@ async def analyze(
             detail="No temperature data available for analysis",
         )
 
+    # Prepare chronological weather records
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
     temperatures = df["temperature_max"]
 
-    extreme_heat_days = int((temperatures >= 35).sum())
+    # Basic temperature statistics
     total_days = len(df)
-
-    heat_percentage = round(
-        extreme_heat_days / total_days * 100, 2
-    )
+    expected_days = weather["expected_days"]
 
     average_temperature = round(float(temperatures.mean()), 2)
     highest_temperature = round(float(temperatures.max()), 2)
     lowest_temperature = round(float(temperatures.min()), 2)
 
-    # Demonstration-only heat risk classification
+    # Extreme heat analysis
+    extreme_flags = temperatures >= 35
+
+    extreme_heat_days = int(extreme_flags.sum())
+
+    heat_percentage = round(
+        extreme_heat_days / total_days * 100, 2
+    )
+
+    # Consecutive heatwave analysis
+    # A heatwave is defined here as 3+ consecutive days >= 35°C.
+    date_gap = df["date"].diff().dt.days
+
+    new_group = (
+        (~extreme_flags) | (date_gap.ne(1))
+    )
+
+    group_ids = new_group.cumsum()
+
+    heatwave_durations = (
+        df.loc[extreme_flags]
+        .groupby(group_ids[extreme_flags])
+        .size()
+    )
+    heatwave_count = int(
+        (heatwave_durations >= 3).sum()
+    )
+
+    valid_heatwave_durations = heatwave_durations[
+        heatwave_durations >= 3
+    ]
+
+    longest_heatwave = (
+        int(valid_heatwave_durations.max())
+        if not valid_heatwave_durations.empty
+        else 0
+    )
+
+    # Heat risk classification
     if heat_percentage < 5:
         risk_level = "Low"
     elif heat_percentage < 15:
@@ -175,12 +227,19 @@ async def analyze(
             "end_date": weather["end_date"],
         },
         "total_days": total_days,
+        "expected_days": expected_days,
+        "missing_days": weather["missing_days"],
+        "data_coverage_percentage": round(
+            total_days / expected_days * 100, 2
+        ),
         "analysis": {
             "average_max_temperature": average_temperature,
             "highest_temperature": highest_temperature,
             "lowest_daily_max_temperature": lowest_temperature,
             "extreme_heat_days": extreme_heat_days,
             "extreme_heat_percentage": heat_percentage,
+            "heatwave_count": heatwave_count,
+            "longest_heatwave_days": longest_heatwave,
         },
         "unit": "°C",
         "risk_level": risk_level,
