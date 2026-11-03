@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import "./App.css";
 
-const API_URL = "https://climate-hazard-analyzer-api-243w.onrender.com";
+const API_URL = "https://climate-hazard-analyzer-6vcw.onrender.com";
 function App() {
   const [latitude, setLatitude] = useState("19.9975");
   const [longitude, setLongitude] = useState("73.7898");

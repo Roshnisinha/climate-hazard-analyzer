@@ -1,4 +1,4 @@
-﻿
+
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
 import httpx
@@ -10,7 +10,6 @@ app = FastAPI(
     description="API for climate hazard analysis",
     version="1.1.0",
 )
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +25,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 
 @app.get("/")
@@ -179,7 +177,6 @@ async def analyze(
 
     # Extreme heat analysis
     extreme_flags = temperatures >= 35
-
     extreme_heat_days = int(extreme_flags.sum())
 
     heat_percentage = round(
@@ -201,13 +198,14 @@ async def analyze(
         .groupby(group_ids[extreme_flags])
         .size()
     )
-    heatwave_count = int(
-        (heatwave_durations >= 3).sum()
-    )
 
     valid_heatwave_durations = heatwave_durations[
         heatwave_durations >= 3
     ]
+
+    heatwave_count = int(
+        (heatwave_durations >= 3).sum()
+    )
 
     longest_heatwave = (
         int(valid_heatwave_durations.max())
